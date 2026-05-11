@@ -197,12 +197,27 @@ function scheduleSetStatus(force = false) {
     const displayRate = hasLive ? rawRate : state.frozenRate!;
     const theme = capturedCtx!.ui.theme;
 
-    // Digest suffix — colored by speed, never greyed
+    // Digest suffix — colored to reflect current state
     const digestSec = meanDigestSec(state);
     const digestLabel = digestSec !== null ? `  ·  ⏱ ${fmtDigest(digestSec)}` : "";
-    const digestColor = digestSec !== null
-      ? (digestSec <= 3 ? "success" : digestSec <= 8 ? "accent" : "warning")
-      : "accent";
+
+    // Determine colors based on context
+    let rateColor: string;
+    let digestColor: string;
+
+    if (hasLive) {
+      // Normal streaming
+      rateColor = colorName(displayRate);
+      digestColor = digestSec <= 3 ? "success" : digestSec <= 8 ? "accent" : "warning";
+    } else if (state.digestStartMs !== null) {
+      // Waiting for digest on new message — orange
+      rateColor = "muted";
+      digestColor = theme ? "warning" : "waiting";
+    } else {
+      // Frozen after message_end
+      rateColor = "muted";
+      digestColor = digestSec <= 3 ? "success" : digestSec <= 8 ? "accent" : "warning";
+    }
 
     // Helper: wrap label in theme or ANSI color
     function applyColor(label: string, color: string) {
@@ -211,18 +226,8 @@ function scheduleSetStatus(force = false) {
     }
 
     const rateLabel = ` ⚡ ${fmt(displayRate)}`;
-    const rateColor = colorName(displayRate);
-
-    if (hasLive) {
-      capturedCtx!.ui.setStatus("token-rate",
-        `${applyColor(rateLabel, rateColor)}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
-    } else {
-      // Frozen: rate greys out, digest goes orange (waiting for digestion)
-      // "warning" for theme (yellow), raw ANSI orange for terminals without theme
-      const frozenDigestColor = theme ? "warning" : "waiting";
-      capturedCtx!.ui.setStatus("token-rate",
-        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, frozenDigestColor) : ""}`);
-    }
+    capturedCtx!.ui.setStatus("token-rate",
+      `${applyColor(rateLabel, rateColor)}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
   });
 }
 
@@ -252,7 +257,9 @@ export default function (pi: ExtensionAPI) {
       capturedCtx = ctx;
       // Record digest start — the clock starts now
       state.digestStartMs = Date.now();
-      // Show the frozen rate so the display never disappears
+      // Reset frozenRate for this new message so we don't mislead
+      // (we'll keep it as fallback display during digest)
+      // Show the display: grey rate + orange digest waiting
       scheduleSetStatus(true);
     }
   });
