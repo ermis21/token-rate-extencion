@@ -60,6 +60,7 @@ const GREEN  = "\x1b[32m";  const CYAN   = "\x1b[36m";
 const YELLOW = "\x1b[33m";  const RED    = "\x1b[31m";
 const RESET  = "\x1b[39m";
 const GREY   = "\x1b[90m";
+const ORANGE = "\x1b[38;5;208m";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -167,6 +168,7 @@ function ansiThemeColor(name: string): string {
     case "warning": return YELLOW;
     case "error":   return RED;
     case "muted":   return GREY;
+    case "waiting": return ORANGE;
     default:       return GREY;
   }
 }
@@ -215,9 +217,9 @@ function scheduleSetStatus(force = false) {
       capturedCtx!.ui.setStatus("token-rate",
         `${applyColor(rateLabel, rateColor)}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
     } else {
-      // Frozen: rate greys out, digest stays colored
+      // Frozen: rate greys out, digest goes orange (waiting for digestion)
       capturedCtx!.ui.setStatus("token-rate",
-        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
+        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, "waiting") : ""}`);
     }
   });
 }
