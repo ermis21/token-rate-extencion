@@ -25,6 +25,9 @@ interface RateState {
   frozenRate: number | null;
   pauseTimer: NodeJS.Timeout | null;
   lastActivityMs: number;
+  // Digest time: model digest latency (message_start → first token)
+  digestStartMs: number | null;
+  digestTimes: number[];      // rolling history in ms
 }
 
 const state: RateState = {
@@ -37,6 +40,9 @@ const state: RateState = {
   frozenRate: null,
   pauseTimer: null,
   lastActivityMs: Date.now(),
+  // Digest time
+  digestStartMs: null,
+  digestTimes: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -129,6 +135,17 @@ function fmt(rate: number): string {
   return `${n} tok/s`;
 }
 
+function fmtDigest(sec: number): string {
+  if (sec >= 10) return `${sec.toFixed(1)}s`;
+  return `${sec.toFixed(2)}s`;
+}
+
+function meanDigestSec(s: RateState): number | null {
+  if (s.digestTimes.length === 0) return null;
+  const sum = s.digestTimes.reduce((a, b) => a + b, 0);
+  return sum / s.digestTimes.length / 1000;
+}
+
 function colorName(rate: number): "success" | "accent" | "warning" | "error" {
   if (rate >= 100) return "success";
   if (rate >= 30)  return "accent";
@@ -165,22 +182,31 @@ function scheduleSetStatus(force = false) {
     }
 
     const displayRate = hasLive ? rawRate : state.frozenRate!;
-    const label = ` ⚡ ${fmt(displayRate)}`;
+    const rateLabel = ` ⚡ ${fmt(displayRate)}`;
     const theme = capturedCtx!.ui.theme;
+
+    // Build digest suffix if we have data
+    const digestSec = meanDigestSec(state);
+    let fullLabel: string;
+    if (digestSec !== null) {
+      fullLabel = `${rateLabel}  ·  ⏱ ${fmtDigest(digestSec)}`;
+    } else {
+      fullLabel = rateLabel;
+    }
 
     if (hasLive) {
       const color = colorName(displayRate);
       if (theme && typeof theme.fg === "function") {
-        capturedCtx!.ui.setStatus("token-rate", theme.fg(color, label));
+        capturedCtx!.ui.setStatus("token-rate", theme.fg(color, fullLabel));
       } else {
-        capturedCtx!.ui.setStatus("token-rate", `${ansiColor(displayRate)}${label}${RESET}`);
+        capturedCtx!.ui.setStatus("token-rate", `${ansiColor(displayRate)}${fullLabel}${RESET}`);
       }
     } else {
       // Frozen: show grey
       if (theme && typeof theme.fg === "function") {
-        capturedCtx!.ui.setStatus("token-rate", theme.fg("muted", label));
+        capturedCtx!.ui.setStatus("token-rate", theme.fg("muted", fullLabel));
       } else {
-        capturedCtx!.ui.setStatus("token-rate", `${GREY}${label}${RESET}`);
+        capturedCtx!.ui.setStatus("token-rate", `${GREY}${fullLabel}${RESET}`);
       }
     }
   });
@@ -210,6 +236,8 @@ export default function (pi: ExtensionAPI) {
       state.paused = false;
       lastUpdateMs = 0;
       capturedCtx = ctx;
+      // Record digest start — the clock starts now
+      state.digestStartMs = Date.now();
       // Show the frozen rate so the display never disappears
       scheduleSetStatus(true);
     }
@@ -223,6 +251,17 @@ export default function (pi: ExtensionAPI) {
       em.type === "toolcall_delta"
     ) {
       const now = Date.now();
+
+      // First token — measure digest time
+      if (state.digestStartMs !== null) {
+        const digestMs = now - state.digestStartMs;
+        state.digestTimes.push(digestMs);
+        // Keep last 20 digest samples
+        if (state.digestTimes.length > 20) {
+          state.digestTimes = state.digestTimes.slice(-20);
+        }
+        state.digestStartMs = null;
+      }
 
       // New tokens arrived — clear pause and switch to live mode
       state.paused = false;
