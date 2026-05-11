@@ -218,8 +218,10 @@ function scheduleSetStatus(force = false) {
         `${applyColor(rateLabel, rateColor)}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
     } else {
       // Frozen: rate greys out, digest goes orange (waiting for digestion)
+      // "warning" for theme (yellow), raw ANSI orange for terminals without theme
+      const frozenDigestColor = theme ? "warning" : "waiting";
       capturedCtx!.ui.setStatus("token-rate",
-        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, "waiting") : ""}`);
+        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, frozenDigestColor) : ""}`);
     }
   });
 }
