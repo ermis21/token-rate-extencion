@@ -160,6 +160,17 @@ function ansiColor(rate: number): string {
   return RED;
 }
 
+function ansiThemeColor(name: string): string {
+  switch (name) {
+    case "success": return GREEN;
+    case "accent":  return CYAN;
+    case "warning": return YELLOW;
+    case "error":   return RED;
+    case "muted":   return GREY;
+    default:       return GREY;
+  }
+}
+
 let lastUpdateMs = 0;
 let capturedCtx: ExtensionContext | null = null;
 
@@ -182,32 +193,31 @@ function scheduleSetStatus(force = false) {
     }
 
     const displayRate = hasLive ? rawRate : state.frozenRate!;
-    const rateLabel = ` ⚡ ${fmt(displayRate)}`;
     const theme = capturedCtx!.ui.theme;
 
-    // Build digest suffix if we have data
+    // Digest suffix — colored by speed, never greyed
     const digestSec = meanDigestSec(state);
-    let fullLabel: string;
-    if (digestSec !== null) {
-      fullLabel = `${rateLabel}  ·  ⏱ ${fmtDigest(digestSec)}`;
-    } else {
-      fullLabel = rateLabel;
+    const digestLabel = digestSec !== null ? `  ·  ⏱ ${fmtDigest(digestSec)}` : "";
+    const digestColor = digestSec !== null
+      ? (digestSec <= 3 ? "success" : digestSec <= 8 ? "accent" : "warning")
+      : "accent";
+
+    // Helper: wrap label in theme or ANSI color
+    function applyColor(label: string, color: string) {
+      if (theme && typeof theme.fg === "function") return theme.fg(color, label);
+      return `${ansiThemeColor(color)}${label}${RESET}`;
     }
 
+    const rateLabel = ` ⚡ ${fmt(displayRate)}`;
+    const rateColor = colorName(displayRate);
+
     if (hasLive) {
-      const color = colorName(displayRate);
-      if (theme && typeof theme.fg === "function") {
-        capturedCtx!.ui.setStatus("token-rate", theme.fg(color, fullLabel));
-      } else {
-        capturedCtx!.ui.setStatus("token-rate", `${ansiColor(displayRate)}${fullLabel}${RESET}`);
-      }
+      capturedCtx!.ui.setStatus("token-rate",
+        `${applyColor(rateLabel, rateColor)}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
     } else {
-      // Frozen: show grey
-      if (theme && typeof theme.fg === "function") {
-        capturedCtx!.ui.setStatus("token-rate", theme.fg("muted", fullLabel));
-      } else {
-        capturedCtx!.ui.setStatus("token-rate", `${GREY}${fullLabel}${RESET}`);
-      }
+      // Frozen: rate greys out, digest stays colored
+      capturedCtx!.ui.setStatus("token-rate",
+        `${applyColor(rateLabel, "muted")}${digestLabel ? applyColor(digestLabel, digestColor) : ""}`);
     }
   });
 }
